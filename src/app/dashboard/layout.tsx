@@ -1,0 +1,92 @@
+"use client";
+import { useState } from "react";
+import { Package, ExternalLink, Wallet, X, LayoutDashboard, PlusCircle, ClipboardList, MapPin, Scale, ArrowLeft } from "lucide-react";
+import { connectWallet, explorerUrl } from "@/lib/genlayer";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const [wallet, setWallet] = useState("");
+  const [mobileNav, setMobileNav] = useState(false);
+  const pathname = usePathname();
+  const shortWallet = wallet ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : "Connect wallet";
+
+  async function connect() {
+    const result = await connectWallet();
+    if (result.success) setWallet(String(result.data));
+  }
+
+  const navItems = [
+    { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
+    { href: "/dashboard/create", label: "Create Delivery", icon: PlusCircle },
+    { href: "/dashboard/manage", label: "Manage Delivery", icon: ClipboardList },
+    { href: "/dashboard/checkpoint", label: "Record Checkpoint", icon: MapPin },
+    { href: "/dashboard/adjudicate", label: "Adjudicate", icon: Scale },
+  ];
+
+  function isActive(href: string) {
+    if (href === "/dashboard") return pathname === "/dashboard";
+    return pathname.startsWith(href);
+  }
+
+  return (
+    <div className="dash-wrap">
+      <nav className="dash-topbar">
+        <div className="dash-topbar-left">
+          <Link href="/" className="icon-btn" title="Back to home"><ArrowLeft size={18} /></Link>
+          <a className="brand" href="/">
+            <span className="brand-mark"><Package size={20} /></span>
+            <span>DelivSafe</span>
+          </a>
+        </div>
+        <div className="dash-topbar-right">
+          <a className="icon-btn" href={explorerUrl()} target="_blank" rel="noreferrer" title="Open contract in Explorer">
+            <ExternalLink size={18} />
+          </a>
+          <button className="dark-btn" onClick={connect}>
+            <Wallet size={16} />{shortWallet}
+          </button>
+          <button className="icon-btn mobile-menu-btn" onClick={() => setMobileNav(!mobileNav)}>
+            {mobileNav ? <X size={18} /> : <span style={{ fontSize: 20, lineHeight: 1 }}>☰</span>}
+          </button>
+        </div>
+      </nav>
+
+      {mobileNav && (
+        <div className="mobile-nav-overlay" onClick={() => setMobileNav(false)}>
+          <div className="mobile-nav-panel" onClick={(e) => e.stopPropagation()}>
+            {navItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`mobile-nav-item ${isActive(item.href) ? "active" : ""}`}
+                onClick={() => setMobileNav(false)}
+              >
+                <item.icon size={18} />
+                {item.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="dash-body">
+        <aside className="dash-sidebar">
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`dash-nav-item ${isActive(item.href) ? "active" : ""}`}
+            >
+              <item.icon size={18} />
+              {item.label}
+            </Link>
+          ))}
+        </aside>
+        <main className="dash-main">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
