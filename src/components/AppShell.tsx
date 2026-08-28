@@ -4,6 +4,37 @@ import { ArrowRight, Check, ExternalLink, ShieldCheck, Package, Wallet } from "l
 import { connectWallet, explorerUrl } from "@/lib/genlayer";
 import Link from "next/link";
 
+const STUDIONET_CHAIN_ID = "0xF22F";
+
+async function ensureStudionetChain() {
+  if (!window.ethereum) return;
+  try {
+    const currentChainId = await window.ethereum.request({ method: "eth_chainId" });
+    if (currentChainId === STUDIONET_CHAIN_ID) return;
+  } catch { /* ignore */ }
+  try {
+    await window.ethereum!.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: STUDIONET_CHAIN_ID }],
+    });
+  } catch (switchErr: any) {
+    if (switchErr?.code === 4902) {
+      try {
+        await window.ethereum!.request({
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: STUDIONET_CHAIN_ID,
+            chainName: "Genlayer Studio Network",
+            nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
+            rpcUrls: ["https://studio.genlayer.com/api"],
+            blockExplorerUrls: ["https://explorer-studio.genlayer.com"],
+          }],
+        });
+      } catch { /* ignore */ }
+    }
+  }
+}
+
 export default function AppShell() {
   const [wallet, setWallet] = useState("");
   const [scrolled, setScrolled] = useState(false);
@@ -12,7 +43,10 @@ export default function AppShell() {
     async function autoConnect() {
       try {
         const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
-        if (accounts?.[0]) setWallet(accounts[0]);
+        if (accounts?.[0]) {
+          setWallet(accounts[0]);
+          await ensureStudionetChain();
+        }
       } catch { /* not connected */ }
     }
     autoConnect();
@@ -36,6 +70,7 @@ export default function AppShell() {
   const shortWallet = wallet ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : "Connect wallet";
 
   async function connect() {
+    await ensureStudionetChain();
     const result = await connectWallet();
     if (result.success) setWallet(String(result.data));
   }

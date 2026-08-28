@@ -29,7 +29,11 @@ export default function FundPage() {
   async function fund() {
     setBusy(true); notify("pending", "Fund delivery: waiting…");
     try {
-      const result = await writeContract("fund_delivery", [Number(deliveryId)], BigInt("1000000000000000"));
+      const loadResult = await readContract("get_delivery", [Number(deliveryId)]);
+      const parsed = loadResult.success ? unwrap<Delivery>(loadResult.data) : null;
+      if (!parsed || typeof parsed !== "object") return notify("error", "Could not load delivery to get fee.");
+
+      const result = await writeContract("fund_delivery", [Number(deliveryId)], BigInt(parsed.fee));
       if (!result.success) return notify("error", result.error || "Fund failed.", result.hash);
       await refresh();
       notify("ok", "Fee deposited into escrow.", result.hash);

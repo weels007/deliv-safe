@@ -9,7 +9,9 @@ declare global {
     ethereum?: {
       request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
       isMetaMask?: boolean;
+      providers?: any[];
     };
+    rabby?: any;
   }
 }
 
@@ -17,7 +19,7 @@ const network = (process.env.NEXT_PUBLIC_NETWORK as NetworkName) || "studionet";
 const endpoint = process.env.NEXT_PUBLIC_GENLAYER_RPC;
 const chainMap = { localnet, studionet };
 const explorerBase = process.env.NEXT_PUBLIC_EXPLORER_BASE || "https://explorer-studio.genlayer.com/address/";
-const RPC_URL = "https://studio.genlayer.com/api";
+const STUDIONET_CHAIN_ID = "0xF22F";
 
 const storageKey = "deliveryescrow.contract";
 
@@ -54,6 +56,55 @@ function findRuntimeFailure(value: unknown, seen = new Set<unknown>()): RuntimeF
     if (failure) return failure;
   }
   return null;
+}
+
+function wrapProvider(provider: any) {
+  if (!provider || provider.__glPatched) return provider;
+  const orig = provider.request.bind(provider);
+  provider.request = async (req: any) => {
+    if (req?.method === "eth_sendTransaction" && Array.isArray(req.params) && req.params[0]) {
+      const tx = { ...req.params[0] };
+      tx.type = "0x0";
+      tx.gasPrice = "0x0";
+      delete tx.maxFeePerGas;
+      delete tx.maxPriorityFeePerGas;
+      if (!tx.gas) tx.gas = "0x100000";
+      console.log("[DelivSafe] wrapProvider intercepted eth_sendTransaction:", tx);
+      return orig({ method: "eth_sendTransaction", params: [tx] });
+    }
+    return orig(req);
+  };
+  provider.__glPatched = true;
+  return provider;
+}
+
+async function ensureStudionetChain(provider: any) {
+  try {
+    const currentChainId = await provider.request({ method: "eth_chainId" });
+    if (currentChainId === STUDIONET_CHAIN_ID) return;
+  } catch { /* ignore */ }
+
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: STUDIONET_CHAIN_ID }],
+    });
+  } catch (switchErr: any) {
+    if (switchErr?.code === 4902) {
+      await provider.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: STUDIONET_CHAIN_ID,
+          chainName: "Genlayer Studio Network",
+          nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
+          rpcUrls: ["https://studio.genlayer.com/api"],
+          blockExplorerUrls: ["https://explorer-studio.genlayer.com"],
+        }],
+      });
+    } else {
+      throw switchErr;
+    }
+  }
 }
 
 export function address(): string {
@@ -99,175 +150,57 @@ export async function readContract(functionName: string, args: unknown[] = []): 
   }
 }
 
-async function rpcCall(method: string, params: unknown[]): Promise<unknown> {
-  const res = await fetch(RPC_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", method, params, id: Date.now() }),
-  });
-  const json = await res.json();
-  if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
-  return json.result;
-}
-
-function encodeArgs(args: unknown[]): string {
-  const parts = args.map((a) => {
-    if (typeof a === "bigint") return "0x" + a.toString(16);
-    if (typeof a === "number") return "0x" + BigInt(a).toString(16);
-    return String(a);
-  });
-  return parts.join("");
-}
-
-async function fallbackWrite(
-  functionName: string,
-  args: unknown[],
-  value: bigint,
-  from: string,
-): Promise<ContractResult> {
-  const addr = address();
-  const calldata = "0x" + (() => {
-    const sig = FUNCTION_SIGS[functionName];
-    if (!sig) throw new Error("Unknown function: " + functionName);
-    return sig + encodeDynamicArgs(args);
-  })();
-
-  const txParams = {
-    from,
-    to: addr,
-    data: calldata,
-    value: "0x" + value.toString(16),
-  };
-
-  console.log("[DelivSafe] fallback eth_sendTransaction:", { functionName, args: args.map(String), value: value.toString() });
-
-  const txHash = (await window.ethereum!.request({
-    method: "eth_sendTransaction",
-    params: [txParams],
-  })) as string;
-
-  console.log("[DelivSafe] tx sent:", txHash);
-
-  let receipt: Record<string, unknown> | null = null;
-  for (let i = 0; i < 120; i++) {
-    await new Promise((r) => setTimeout(r, 3000));
-    try {
-      receipt = (await rpcCall("eth_getTransactionReceipt", [txHash])) as Record<string, unknown> | null;
-      if (receipt) break;
-    } catch { /* retry */ }
-  }
-
-  if (!receipt) return { success: false, hash: txHash, error: "Timeout waiting for receipt." };
-
-  const status = Number(receipt.status);
-  if (status !== 1) {
-    const failure = findRuntimeFailure(receipt);
-    return { success: false, hash: txHash, error: failure ? `Contract rejected: ${failure.payload}` : "Transaction reverted." };
-  }
-
-  return { success: true, hash: txHash, status: "FINALIZED", data: receipt };
-}
-
-function keccak256_hex(input: string): string {
-  let h = 0x67452301;
-  for (let i = 0; i < input.length; i++) {
-    h = ((h << 5) + h + input.charCodeAt(i)) | 0;
-  }
-  return ("00000000" + ((h >>> 0) & 0xffffffff).toString(16)).slice(-8);
-}
-
-const FUNCTION_SIGS: Record<string, string> = {
-  create_delivery: keccak256_hex("create_delivery(string,string,string,uint256,string,string)").slice(0, 8),
-  set_schedule: keccak256_hex("set_schedule(uint256,uint256,uint256,uint256,uint256)").slice(0, 8),
-  accept_delivery: keccak256_hex("accept_delivery(uint256)").slice(0, 8),
-  fund_delivery: keccak256_hex("fund_delivery(uint256)").slice(0, 8),
-  record_checkpoint: keccak256_hex("record_checkpoint(uint256,string,string,string,uint256)").slice(0, 8),
-  confirm_completion: keccak256_hex("confirm_completion(uint256)").slice(0, 8),
-  open_dispute: keccak256_hex("open_dispute(uint256)").slice(0, 8),
-  adjudicate: keccak256_hex("adjudicate(uint256)").slice(0, 8),
-  settle: keccak256_hex("settle(uint256)").slice(0, 8),
-  recover: keccak256_hex("recover(uint256)").slice(0, 8),
-};
-
-function encodeDynamicArgs(args: unknown[]): string {
-  const HEAD_LEN = 64;
-  const heads: string[] = [];
-  const tails: string[] = [];
-  let tailOffset = args.length * HEAD_LEN;
-
-  for (const arg of args) {
-    if (typeof arg === "bigint" || typeof arg === "number") {
-      const hex = typeof arg === "bigint" ? arg.toString(16) : BigInt(arg).toString(16);
-      heads.push(hex.padStart(64, "0"));
-    } else if (typeof arg === "string" && arg.startsWith("0x") && arg.length === 42) {
-      heads.push(arg.toLowerCase().slice(2).padStart(64, "0"));
-    } else if (typeof arg === "string") {
-      const strHex = Array.from(new TextEncoder().encode(arg)).map(b => b.toString(16).padStart(2, "0")).join("");
-      const strLen = arg.length.toString(16).padStart(64, "0");
-      const padded = strHex.padEnd(Math.ceil(strHex.length / 128) * 128, "0");
-      heads.push(tailOffset.toString(16).padStart(64, "0"));
-      tails.push(strLen + padded);
-      tailOffset += 64 + padded.length / 2;
-    } else {
-      heads.push("0".padStart(64, "0"));
-    }
-  }
-  return heads.join("") + tails.join("");
-}
-
 export async function writeContract(
   functionName: string,
   args: unknown[],
   value = BigInt(0)
 ): Promise<ContractResult> {
   if (!window.ethereum) return { success: false, error: "Connect a wallet before writing." };
-  const addr = address();
-  if (!addr || addr.endsWith("0".repeat(40))) {
+  const contractAddr = address();
+  if (!contractAddr || contractAddr.endsWith("0".repeat(40))) {
     return { success: false, error: "Configure a deployed contract address first." };
   }
   let hash = "";
   try {
+    console.log("[DelivSafe] writeContract start:", { functionName, args: args.map(String), value: value.toString() });
+
     const accounts = (await window.ethereum.request({ method: "eth_requestAccounts" })) as string[];
+    console.log("[DelivSafe] accounts:", accounts);
     if (!accounts[0]) return { success: false, error: "No wallet account selected." };
 
-    let useFallback = false;
+    const walletAddress = accounts[0] as `0x${string}`;
+
+    await ensureStudionetChain(window.ethereum);
+    console.log("[DelivSafe] chain verified");
+
+    const wrappedProvider = wrapProvider(window.ethereum);
+
     const client = createClient({
       chain: chainMap[network] ?? studionet,
       ...(endpoint ? { endpoint } : {}),
-      provider: window.ethereum,
-      account: accounts[0] as `0x${string}`,
+      provider: wrappedProvider,
+      account: walletAddress,
     }) as unknown as RuntimeClient;
+    console.log("[DelivSafe] SDK client created (no Snap needed)");
 
-    try {
-      if (client.connect) await client.connect(network);
-    } catch (connectErr: unknown) {
-      const msg = connectErr instanceof Error ? connectErr.message : String(connectErr);
-      if (msg.includes("wallet_getSnaps") || msg.includes("Snaps") || msg.includes("doesn't has corresponding handler")) {
-        console.log("[DelivSafe] Snap not available, using eth_sendTransaction fallback");
-        useFallback = true;
-      } else {
-        throw connectErr;
-      }
-    }
-
-    if (useFallback) {
-      return await fallbackWrite(functionName, args, value, accounts[0]);
-    }
-
-    const raw = await client.writeContract({ address: addr, functionName, args, value });
+    console.log("[DelivSafe] calling client.writeContract...");
+    const raw = await client.writeContract({ address: contractAddr, functionName, args, value });
     hash = typeof raw === "string" ? raw : raw.txId;
     console.log("[DelivSafe] writeContract sent:", { functionName, args: args.map(String), hash });
 
+    console.log("[DelivSafe] waiting for receipt...");
     const receipt = await client.waitForTransactionReceipt({
       hash: hash as `0x${string}`,
       status: TransactionStatus.ACCEPTED,
       interval: 2000,
       retries: 100,
     });
+    console.log("[DelivSafe] receipt received:", receipt);
 
     let observed = receipt;
     try {
       observed = await client.getTransaction({ hash: hash as `0x${string}` });
+      console.log("[DelivSafe] getTransaction result:", observed);
     } catch { /* receipt remains authoritative */ }
 
     const failure = findRuntimeFailure(observed) || findRuntimeFailure(receipt);

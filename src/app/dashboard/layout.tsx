@@ -5,6 +5,37 @@ import { connectWallet, explorerUrl } from "@/lib/genlayer";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+const STUDIONET_CHAIN_ID = "0xF22F";
+
+async function ensureStudionetChain() {
+  if (!window.ethereum) return;
+  try {
+    const currentChainId = await window.ethereum.request({ method: "eth_chainId" });
+    if (currentChainId === STUDIONET_CHAIN_ID) return;
+  } catch { /* ignore */ }
+  try {
+    await window.ethereum!.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: STUDIONET_CHAIN_ID }],
+    });
+  } catch (switchErr: any) {
+    if (switchErr?.code === 4902) {
+      try {
+        await window.ethereum!.request({
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: STUDIONET_CHAIN_ID,
+            chainName: "Genlayer Studio Network",
+            nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
+            rpcUrls: ["https://studio.genlayer.com/api"],
+            blockExplorerUrls: ["https://explorer-studio.genlayer.com"],
+          }],
+        });
+      } catch { /* ignore */ }
+    }
+  }
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [wallet, setWallet] = useState("");
   const [mobileNav, setMobileNav] = useState(false);
@@ -16,13 +47,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (wallet) return;
       try {
         const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
-        if (accounts?.[0]) setWallet(accounts[0]);
+        if (accounts?.[0]) {
+          setWallet(accounts[0]);
+          await ensureStudionetChain();
+        }
       } catch { /* not connected */ }
     }
     autoConnect();
   }, [wallet]);
 
   async function connect() {
+    await ensureStudionetChain();
     const result = await connectWallet();
     if (result.success) setWallet(String(result.data));
   }
