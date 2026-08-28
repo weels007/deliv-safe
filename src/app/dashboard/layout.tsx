@@ -19,9 +19,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const navItems = [
     { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
     { href: "/dashboard/create", label: "Create Delivery", icon: PlusCircle },
-    { href: "/dashboard/manage", label: "Manage Delivery", icon: ClipboardList },
+    { href: "/dashboard/accept", label: "Accept", icon: ClipboardList },
+    { href: "/dashboard/fund", label: "Fund", icon: ClipboardList },
+    { href: "/dashboard/confirm", label: "Confirm", icon: ClipboardList },
     { href: "/dashboard/checkpoint", label: "Record Checkpoint", icon: MapPin },
-    { href: "/dashboard/adjudicate", label: "Adjudicate", icon: Scale },
+    { href: "/dashboard/dispute", label: "Open Dispute", icon: Scale },
+    { href: "/dashboard/jury", label: "Run Jury", icon: Scale },
+    { href: "/dashboard/settle", label: "Settle", icon: Scale },
+    { href: "/dashboard/recover", label: "Recover", icon: Scale },
   ];
 
   function isActive(href: string) {
