@@ -122,6 +122,7 @@ export async function writeContract(
 
     const raw = await client.writeContract({ address: addr, functionName, args, value });
     hash = typeof raw === "string" ? raw : raw.txId;
+    console.log("[DelivSafe] writeContract sent:", { functionName, args: args.map(String), hash });
 
     const receipt = await client.waitForTransactionReceipt({
       hash: hash as `0x${string}`,
@@ -137,7 +138,8 @@ export async function writeContract(
 
     const failure = findRuntimeFailure(observed) || findRuntimeFailure(receipt);
     if (failure) {
-      return { success: false, hash, error: `Contract rejected this action: ${failure.payload}` };
+      console.error("[DelivSafe] contract error:", failure);
+      return { success: false, hash, error: `Contract rejected: ${failure.payload}` };
     }
 
     return {
@@ -147,6 +149,7 @@ export async function writeContract(
       data: receipt,
     };
   } catch (error) {
+    console.error("[DelivSafe] write failed:", error);
     return { success: false, hash, error: error instanceof Error ? error.message : "Contract write failed." };
   }
 }

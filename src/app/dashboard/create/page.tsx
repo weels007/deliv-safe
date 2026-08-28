@@ -5,7 +5,11 @@ import { writeContract } from "@/lib/genlayer";
 
 type Toast = { kind: "ok" | "error" | "pending"; message: string; hash?: string } | null;
 
-const wei = (v: string) => BigInt(Math.round(Number(v || 0) * 1e6)) * BigInt(1e12);
+function toWei(v: string): bigint {
+  const s = v.trim();
+  if (s.includes(".")) return BigInt(Math.round(Number(s) * 1e18));
+  return BigInt(s || "0");
+}
 
 export default function CreatePage() {
   const [toast, setToast] = useState<Toast>(null);
@@ -26,7 +30,7 @@ export default function CreatePage() {
     notify("pending", "Create delivery: waiting for contract acceptance…");
     try {
       const result = await writeContract("create_delivery", [
-        form.title, form.description, form.courier, wei(form.fee), form.terms_url, form.terms_digest,
+        form.title, form.description, form.courier, toWei(form.fee), form.terms_url, form.terms_digest,
       ]);
       if (result.success) notify("ok", "Delivery created on-chain.", result.hash);
       else notify("error", result.error || "Create delivery failed.", result.hash);
@@ -49,7 +53,7 @@ export default function CreatePage() {
           <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         </label>
         <div className="two">
-          <label>Fee (GEN)<input value={form.fee} onChange={(e) => setForm({ ...form, fee: e.target.value })} /></label>
+          <label>Fee (GEN)<input placeholder="e.g. 0.01 or 3" value={form.fee} onChange={(e) => setForm({ ...form, fee: e.target.value })} /></label>
           <label>Courier wallet<input placeholder="0x…" value={form.courier} onChange={(e) => setForm({ ...form, courier: e.target.value })} /></label>
         </div>
         <label>Terms URL<input placeholder="https://ipfs.io/ipfs/…" value={form.terms_url} onChange={(e) => setForm({ ...form, terms_url: e.target.value })} /></label>
