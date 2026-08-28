@@ -118,7 +118,19 @@ export async function writeContract(
       provider: window.ethereum,
       account: accounts[0] as `0x${string}`,
     }) as unknown as RuntimeClient;
-    if (client.connect) await client.connect(network);
+
+    try {
+      if (client.connect) await client.connect(network);
+    } catch (connectErr: unknown) {
+      const msg = connectErr instanceof Error ? connectErr.message : String(connectErr);
+      if (msg.includes("wallet_getSnaps") || msg.includes("Snaps")) {
+        return {
+          success: false,
+          error: "Wallet doesn't support MetaMask Snaps. Please install MetaMask and add the GenLayer Snap.",
+        };
+      }
+      throw connectErr;
+    }
 
     const raw = await client.writeContract({ address: addr, functionName, args, value });
     hash = typeof raw === "string" ? raw : raw.txId;
