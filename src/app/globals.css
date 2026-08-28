@@ -1133,6 +1133,15 @@ footer p {
   overflow-y: auto;
 }
 
+.sidebar-section {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  padding: 16px 14px 6px;
+}
+
 .dash-nav-item {
   display: flex;
   align-items: center;
@@ -1422,6 +1431,14 @@ footer p {
     display: flex;
     flex-direction: column;
     gap: 4px;
+  }
+  .mobile-nav-section {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    padding: 12px 14px 4px;
   }
   .mobile-nav-item {
     display: flex;

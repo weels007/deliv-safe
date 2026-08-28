@@ -16,17 +16,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (result.success) setWallet(String(result.data));
   }
 
-  const navItems = [
-    { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-    { href: "/dashboard/create", label: "Create Delivery", icon: PlusCircle },
-    { href: "/dashboard/accept", label: "Accept", icon: ClipboardList },
-    { href: "/dashboard/fund", label: "Fund", icon: ClipboardList },
-    { href: "/dashboard/confirm", label: "Confirm", icon: ClipboardList },
-    { href: "/dashboard/checkpoint", label: "Record Checkpoint", icon: MapPin },
-    { href: "/dashboard/dispute", label: "Open Dispute", icon: Scale },
-    { href: "/dashboard/jury", label: "Run Jury", icon: Scale },
-    { href: "/dashboard/settle", label: "Settle", icon: Scale },
-    { href: "/dashboard/recover", label: "Recover", icon: Scale },
+  const navSections = [
+    {
+      label: "Overview",
+      items: [{ href: "/dashboard", label: "Overview", icon: LayoutDashboard }],
+    },
+    {
+      label: "Lifecycle",
+      items: [
+        { href: "/dashboard/create", label: "Create Delivery", icon: PlusCircle },
+        { href: "/dashboard/accept", label: "Accept", icon: ClipboardList },
+        { href: "/dashboard/fund", label: "Fund", icon: ClipboardList },
+        { href: "/dashboard/confirm", label: "Confirm", icon: ClipboardList },
+        { href: "/dashboard/checkpoint", label: "Record Checkpoint", icon: MapPin },
+      ],
+    },
+    {
+      label: "Dispute",
+      items: [
+        { href: "/dashboard/dispute", label: "Open Dispute", icon: Scale },
+        { href: "/dashboard/jury", label: "Run Jury", icon: Scale },
+        { href: "/dashboard/settle", label: "Settle", icon: Scale },
+        { href: "/dashboard/recover", label: "Recover", icon: Scale },
+      ],
+    },
   ];
 
   function isActive(href: string) {
@@ -60,16 +73,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {mobileNav && (
         <div className="mobile-nav-overlay" onClick={() => setMobileNav(false)}>
           <div className="mobile-nav-panel" onClick={(e) => e.stopPropagation()}>
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`mobile-nav-item ${isActive(item.href) ? "active" : ""}`}
-                onClick={() => setMobileNav(false)}
-              >
-                <item.icon size={18} />
-                {item.label}
-              </Link>
+            {navSections.map((section) => (
+              <div key={section.label}>
+                <div className="mobile-nav-section">{section.label}</div>
+                {section.items.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`mobile-nav-item ${isActive(item.href) ? "active" : ""}`}
+                    onClick={() => setMobileNav(false)}
+                  >
+                    <item.icon size={18} />
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
             ))}
           </div>
         </div>
@@ -77,15 +95,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <div className="dash-body">
         <aside className="dash-sidebar">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`dash-nav-item ${isActive(item.href) ? "active" : ""}`}
-            >
-              <item.icon size={18} />
-              {item.label}
-            </Link>
+          {navSections.map((section) => (
+            <div key={section.label}>
+              <div className="sidebar-section">{section.label}</div>
+              {section.items.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`dash-nav-item ${isActive(item.href) ? "active" : ""}`}
+                >
+                  <item.icon size={18} />
+                  {item.label}
+                </Link>
+              ))}
+            </div>
           ))}
         </aside>
         <main className="dash-main">
