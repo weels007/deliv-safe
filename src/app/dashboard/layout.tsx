@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Package, ExternalLink, Wallet, X, LayoutDashboard, PlusCircle, ClipboardList, MapPin, Scale, ArrowLeft } from "lucide-react";
 import { connectWallet, explorerUrl } from "@/lib/genlayer";
 import Link from "next/link";
@@ -10,6 +10,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [mobileNav, setMobileNav] = useState(false);
   const pathname = usePathname();
   const shortWallet = wallet ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : "Connect wallet";
+
+  useEffect(() => {
+    async function autoConnect() {
+      if (wallet) return;
+      try {
+        const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
+        if (accounts?.[0]) setWallet(accounts[0]);
+      } catch { /* not connected */ }
+    }
+    autoConnect();
+  }, [wallet]);
 
   async function connect() {
     const result = await connectWallet();

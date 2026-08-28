@@ -9,6 +9,14 @@ export default function AppShell() {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
+    async function autoConnect() {
+      try {
+        const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
+        if (accounts?.[0]) setWallet(accounts[0]);
+      } catch { /* not connected */ }
+    }
+    autoConnect();
+
     const onScroll = () => setScrolled(window.scrollY > 36);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
