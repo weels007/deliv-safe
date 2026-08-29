@@ -1,13 +1,13 @@
 "use client";
 import { useState, useEffect } from "react";
-import { readContract, writeContract, unwrap, deliveryStatusColor } from "@/lib/genlayer";
-
-type Delivery = {
-  id: number; sender: string; courier: string; title: string; status: string;
-  transit_deadline: number; delivery_deadline: number;
-};
+import { writeContract, deliveryStatusColor, fetchDeliveries, detectWallet, type DeliverySummary } from "@/lib/genlayer";
 
 type Toast = { kind: "ok" | "error" | "pending"; message: string; hash?: string } | null;
+
+function formatTs(ts: number) {
+  if (!ts) return "Not set";
+  return new Date(ts * 1000).toLocaleString();
+}
 
 const COURIER_KINDS = ["PICKUP_CONFIRMED", "IN_TRANSIT", "DELIVERED"];
 const SENDER_KINDS = ["DELIVERY_CONFIRMED", "DAMAGE_REPORT", "COMPLETION_ACK"];
@@ -15,9 +15,10 @@ const SENDER_KINDS = ["DELIVERY_CONFIRMED", "DAMAGE_REPORT", "COMPLETION_ACK"];
 export default function CheckpointPage() {
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState(false);
-  const [deliveryId, setDeliveryId] = useState("0");
-  const [delivery, setDelivery] = useState<Delivery | null>(null);
   const [walletAddr, setWalletAddr] = useState("");
+  const [deliveries, setDeliveries] = useState<DeliverySummary[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [loadingList, setLoadingList] = useState(true);
   const [form, setForm] = useState({
     kind: "PICKUP_CONFIRMED",
     url: "",
@@ -27,30 +28,29 @@ export default function CheckpointPage() {
 
   const notify = (kind: "ok" | "error" | "pending", message: string, hash?: string) => setToast({ kind, message, hash });
 
-  async function detectWallet(): Promise<string> {
+  const selected = deliveries.find(d => d.id === Number(selectedId)) || null;
+
+  async function loadDeliveries() {
+    setLoadingList(true);
     try {
-      const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
-      return accounts?.[0]?.toLowerCase() || "";
-    } catch { return ""; }
+      const addr = await detectWallet();
+      if (addr) setWalletAddr(addr);
+      const all = await fetchDeliveries();
+      const mine = all.filter(d =>
+        (d.status === "IN_TRANSIT" || d.status === "DELIVERED") &&
+        (d.courier.toLowerCase() === addr || d.sender.toLowerCase() === addr)
+      );
+      setDeliveries(mine);
+      if (mine.length > 0 && !selectedId) setSelectedId(String(mine[0].id));
+    } catch { /* ignore */ }
+    setLoadingList(false);
   }
 
-  async function refresh(id = deliveryId) {
-    const result = await readContract("get_delivery", [Number(id)]);
-    const parsed = result.success ? unwrap<Delivery>(result.data) : null;
-    if (parsed && typeof parsed === "object") {
-      setDelivery(parsed);
-      notify("ok", `Delivery #${id} loaded.`);
-    } else {
-      setDelivery(null);
-      notify("error", result.error || "Delivery not found.");
-    }
-  }
+  useEffect(() => { loadDeliveries(); }, []);
 
-  useEffect(() => { detectWallet().then(setWalletAddr); }, []);
-
-  const myRole = delivery && walletAddr
-    ? walletAddr === delivery.courier.toLowerCase() ? "COURIER"
-      : walletAddr === delivery.sender.toLowerCase() ? "SENDER"
+  const myRole = selected && walletAddr
+    ? walletAddr === selected.courier.toLowerCase() ? "COURIER"
+      : walletAddr === selected.sender.toLowerCase() ? "SENDER"
       : null
     : null;
 
@@ -58,12 +58,12 @@ export default function CheckpointPage() {
 
   const nowSec = Math.floor(Date.now() / 1000);
   const deadlineOk = myRole === "COURIER"
-    ? delivery ? delivery.transit_deadline > nowSec : false
+    ? selected ? selected.transit_deadline > nowSec : false
     : myRole === "SENDER"
-    ? delivery ? delivery.delivery_deadline > nowSec : false
+    ? selected ? selected.delivery_deadline > nowSec : false
     : false;
   const revisionValid = Number(form.revision) >= 1;
-  const canRecord = delivery && myRole && (delivery.status === "IN_TRANSIT" || delivery.status === "DELIVERED") && deadlineOk && revisionValid;
+  const canRecord = selected && myRole && (selected.status === "IN_TRANSIT" || selected.status === "DELIVERED") && deadlineOk && revisionValid;
 
   async function recordCheckpoint() {
     if (!canRecord) return;
@@ -73,7 +73,7 @@ export default function CheckpointPage() {
       const addr = await detectWallet();
       if (addr) setWalletAddr(addr);
       const result = await writeContract("record_checkpoint", [
-        Number(deliveryId), form.kind, form.url, form.digest, Number(form.revision),
+        selected.id, form.kind, form.url, form.digest, Number(form.revision),
       ]);
       if (result.success) notify("ok", "Checkpoint recorded.", result.hash);
       else notify("error", result.error || "Failed.", result.hash);
@@ -87,11 +87,16 @@ export default function CheckpointPage() {
       <p className="page-desc">Append an immutable evidence checkpoint to a delivery. Each checkpoint preserves actor, role, URL, digest, and revision. Courier evidence must be before transit deadline; sender evidence before delivery deadline.</p>
 
       <div className="form-card">
-        <div className="lookup">
-          <input value={deliveryId} onChange={(e) => setDeliveryId(e.target.value)} placeholder="Delivery ID" />
-          <button onClick={() => refresh()}>Load</button>
-        </div>
-        {delivery && myRole && (
+        <label>
+          Select a delivery (IN_TRANSIT or DELIVERED)
+          <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)} disabled={loadingList}>
+            <option value="">{loadingList ? "Loading…" : deliveries.length === 0 ? "No eligible deliveries" : "Choose a delivery…"}</option>
+            {deliveries.map(d => (
+              <option key={d.id} value={d.id}>#{d.id} — {d.title}</option>
+            ))}
+          </select>
+        </label>
+        {selected && myRole && (
           <>
             <label>
               Checkpoint type ({myRole})
@@ -107,20 +112,32 @@ export default function CheckpointPage() {
           </>
         )}
         <button className="blue-btn full" disabled={!canRecord || busy} onClick={recordCheckpoint}>
-          {busy ? "Processing…" : !walletAddr ? "Wallet not connected" : !delivery ? "Load delivery first" : !myRole ? "You are not a party" : delivery.status !== "IN_TRANSIT" && delivery.status !== "DELIVERED" ? `Status: ${delivery.status}` : !deadlineOk ? "Deadline passed" : !revisionValid ? "Revision must be ≥ 1" : "Record checkpoint"}
+          {busy ? "Processing…" : !walletAddr ? "Wallet not connected" : deliveries.length === 0 ? "No eligible deliveries" : !selected ? "Select a delivery" : !myRole ? "You are not a party" : selected.status !== "IN_TRANSIT" && selected.status !== "DELIVERED" ? `Status: ${selected.status}` : !deadlineOk ? "Deadline passed" : !revisionValid ? "Revision must be ≥ 1" : "Record checkpoint"}
         </button>
       </div>
 
-      {delivery && (
+      {selected && (
         <div className="state-card" style={{ marginTop: 24 }}>
           <div className="state-top">
-            <span>Authoritative state</span>
-            <button onClick={() => refresh()}>Refresh</button>
+            <span>Selected delivery</span>
+            <button onClick={() => loadDeliveries()}>Refresh</button>
           </div>
-          <div className={`status-pill ${deliveryStatusColor[delivery.status] || ""}`}>{delivery.status.replace(/_/g, " ")}</div>
-          <h3>#{delivery.id} · {delivery.title}</h3>
+          <div className={`status-pill ${deliveryStatusColor[selected.status] || ""}`}>{selected.status.replace(/_/g, " ")}</div>
+          <h3>#{selected.id} · {selected.title}</h3>
+          <dl>
+            <dt>Courier</dt><dd className="mono">{selected.courier}</dd>
+            <dt>Sender</dt><dd className="mono">{selected.sender}</dd>
+            <dt>Transit deadline</dt><dd>{formatTs(selected.transit_deadline)}</dd>
+            <dt>Delivery deadline</dt><dd>{formatTs(selected.delivery_deadline)}</dd>
+          </dl>
           {myRole && <p>Your role: <strong>{myRole}</strong></p>}
           {!myRole && walletAddr && <p>You are not a party to this delivery.</p>}
+        </div>
+      )}
+
+      {!selected && !loadingList && (
+        <div className="empty-state" style={{ marginTop: 24 }}>
+          <p>{!walletAddr ? "Connect your wallet to see your deliveries." : "No IN_TRANSIT or DELIVERED deliveries found where you are a party."}</p>
         </div>
       )}
 

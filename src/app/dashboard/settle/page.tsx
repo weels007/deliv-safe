@@ -1,37 +1,50 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ShieldCheck } from "lucide-react";
-import { readContract, writeContract, unwrap, deliveryStatusColor } from "@/lib/genlayer";
-
-type Delivery = {
-  id: number; sender: string; courier: string; title: string; description: string;
-  fee: number; bond: number; status: string; verdict: string;
-  courier_paid: number; courier_refunded: number; sender_paid: number; sender_refunded: number;
-};
+import { writeContract, deliveryStatusColor, fetchDeliveries, detectWallet, type DeliverySummary } from "@/lib/genlayer";
 
 type Toast = { kind: "ok" | "error" | "pending"; message: string; hash?: string } | null;
 
+function formatTs(ts: number) {
+  if (!ts) return "Not set";
+  return new Date(ts * 1000).toLocaleString();
+}
+
 export default function SettlePage() {
-  const [deliveryId, setDeliveryId] = useState("0");
-  const [delivery, setDelivery] = useState<Delivery | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState(false);
+  const [walletAddr, setWalletAddr] = useState("");
+  const [deliveries, setDeliveries] = useState<DeliverySummary[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");
+  const [loadingList, setLoadingList] = useState(true);
 
   const notify = (kind: "ok" | "error" | "pending", message: string, hash?: string) => setToast({ kind, message, hash });
 
-  async function refresh(id = deliveryId) {
-    const result = await readContract("get_delivery", [Number(id)]);
-    const parsed = result.success ? unwrap<Delivery>(result.data) : null;
-    if (parsed && typeof parsed === "object") { setDelivery(parsed); notify("ok", `Delivery #${id} loaded.`); }
-    else { setDelivery(null); notify("error", result.error || "Delivery not found."); }
+  const selected = deliveries.find(d => d.id === Number(selectedId)) || null;
+
+  async function loadDeliveries() {
+    setLoadingList(true);
+    try {
+      const addr = await detectWallet();
+      if (addr) setWalletAddr(addr);
+      const all = await fetchDeliveries();
+      const mine = all.filter(d => d.status === "ADJUDICATED");
+      setDeliveries(mine);
+      if (mine.length > 0 && !selectedId) setSelectedId(String(mine[0].id));
+    } catch { /* ignore */ }
+    setLoadingList(false);
   }
 
+  useEffect(() => { loadDeliveries(); }, []);
+
   async function settle() {
-    setBusy(true); notify("pending", "Settle: waiting…");
+    if (!selected) return;
+    setBusy(true);
+    notify("pending", "Settle: waiting…");
     try {
-      const result = await writeContract("settle", [Number(deliveryId)]);
+      const result = await writeContract("settle", [selected.id]);
       if (!result.success) return notify("error", result.error || "Settle failed.", result.hash);
-      await refresh();
+      await loadDeliveries();
       notify("ok", "Payment settled.", result.hash);
     } catch (e) { notify("error", e instanceof Error ? e.message : "Failed."); }
     finally { setBusy(false); }
@@ -47,39 +60,40 @@ export default function SettlePage() {
       <p className="page-desc">Based on the jury verdict, payment is distributed: full payout, partial, or refund. Requires ADJUDICATED status.</p>
 
       <div className="form-card">
-        <div className="lookup">
-          <input value={deliveryId} onChange={(e) => setDeliveryId(e.target.value)} placeholder="Delivery ID" />
-          <button onClick={() => refresh()}>Load</button>
-        </div>
-        <button className="green-btn full" disabled={!delivery || delivery.status !== "ADJUDICATED" || !!busy} onClick={settle}>
-          {busy ? "Processing…" : !delivery ? "Load delivery first" : delivery.status !== "ADJUDICATED" ? `Status: ${delivery.status}` : "Settle payment"}
+        <label>
+          Select a delivery (ADJUDICATED)
+          <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)} disabled={loadingList}>
+            <option value="">{loadingList ? "Loading…" : deliveries.length === 0 ? "No eligible deliveries" : "Choose a delivery…"}</option>
+            {deliveries.map(d => (
+              <option key={d.id} value={d.id}>#{d.id} — {d.title}</option>
+            ))}
+          </select>
+        </label>
+        <button className="green-btn full" disabled={!selected || selected.status !== "ADJUDICATED" || !!busy} onClick={settle}>
+          {busy ? "Processing…" : deliveries.length === 0 ? "No eligible deliveries" : !selected ? "Select a delivery" : selected.status !== "ADJUDICATED" ? `Status: ${selected.status}` : "Settle payment"}
         </button>
       </div>
 
-      {delivery && (
+      {selected && (
         <div className="state-card" style={{ marginTop: 24 }}>
           <div className="state-top">
-            <span>Authoritative state</span>
-            <button onClick={() => refresh()}>Refresh</button>
+            <span>Selected delivery</span>
+            <button onClick={() => loadDeliveries()}>Refresh</button>
           </div>
-          <div className={statusPill(delivery.status)}>{delivery.status.replace(/_/g, " ")}</div>
-          <h3>#{delivery.id} · {delivery.title}</h3>
-          <p>{delivery.description}</p>
+          <div className={statusPill(selected.status)}>{selected.status.replace(/_/g, " ")}</div>
+          <h3>#{selected.id} · {selected.title}</h3>
+          <p>{selected.description}</p>
           <dl>
-            <dt>Fee</dt><dd>{(delivery.fee / 1e18).toFixed(4)} GEN</dd>
-            <dt>Verdict</dt><dd>{delivery.verdict || "—"}</dd>
-            <dt>Courier paid</dt><dd>{(delivery.courier_paid / 1e18).toFixed(4)} GEN</dd>
-            <dt>Courier refunded</dt><dd>{(delivery.courier_refunded / 1e18).toFixed(4)} GEN</dd>
-            <dt>Sender paid</dt><dd>{(delivery.sender_paid / 1e18).toFixed(4)} GEN</dd>
-            <dt>Sender refunded</dt><dd>{(delivery.sender_refunded / 1e18).toFixed(4)} GEN</dd>
+            <dt>Fee</dt><dd>{(selected.fee / 1e18).toFixed(4)} GEN</dd>
+            <dt>Verdict</dt><dd>{selected.verdict || "—"}</dd>
           </dl>
         </div>
       )}
 
-      {!delivery && (
+      {!selected && !loadingList && (
         <div className="empty-state" style={{ marginTop: 24 }}>
           <ShieldCheck />
-          <p>Enter a delivery ID and click Load to see its on-chain state.</p>
+          <p>No ADJUDICATED deliveries found.</p>
         </div>
       )}
 

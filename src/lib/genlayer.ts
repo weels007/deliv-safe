@@ -277,6 +277,37 @@ export function unwrap<T>(value: unknown): T | null {
   }
 }
 
+export type DeliverySummary = {
+  id: number; sender: string; courier: string; title: string; status: string;
+  pickup_deadline: number; transit_deadline: number; delivery_deadline: number; recovery_deadline: number;
+  fee: number; bond: number; description: string; verdict: string;
+  courier_delivery_checkpoint: number; sender_confirmation_checkpoint: number;
+};
+
+export async function fetchDeliveries(): Promise<DeliverySummary[]> {
+  const totals = await readContract("get_totals");
+  const data = totals.success ? unwrap<{ deliveries: number }>(totals.data) : null;
+  const count = data?.deliveries ?? 0;
+  if (count === 0) return [];
+  const results: DeliverySummary[] = [];
+  const fetches = Array.from({ length: count }, (_, i) => readContract("get_delivery", [i]));
+  const settled = await Promise.allSettled(fetches);
+  for (const s of settled) {
+    if (s.status === "fulfilled" && s.value.success) {
+      const d = unwrap<DeliverySummary>(s.value.data);
+      if (d && typeof d === "object" && "id" in d) results.push(d);
+    }
+  }
+  return results;
+}
+
+export async function detectWallet(): Promise<string> {
+  try {
+    const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
+    return accounts?.[0]?.toLowerCase() || "";
+  } catch { return ""; }
+}
+
 export const deliveryStatusColor: Record<string, string> = {
   DELIVERY_OPEN: "",
   SCHEDULED: "",
