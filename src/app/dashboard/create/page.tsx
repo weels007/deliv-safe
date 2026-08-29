@@ -26,12 +26,14 @@ export default function CreatePage() {
 
   const notify = (kind: "ok" | "error" | "pending", message: string, hash?: string) => setToast({ kind, message, hash });
 
-  async function loadWallet() {
+  async function detectWallet(): Promise<string> {
     try {
       const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
-      if (accounts?.[0]) setWalletAddr(accounts[0].toLowerCase());
-    } catch { /* ignore */ }
+      return accounts?.[0]?.toLowerCase() || "";
+    } catch { return ""; }
   }
+
+  useEffect(() => { detectWallet().then(setWalletAddr); }, []);
 
   function validate(): string | null {
     if (form.title.length < 4) return "Title must be at least 4 characters.";
@@ -52,7 +54,8 @@ export default function CreatePage() {
     setBusy(true);
     notify("pending", "Create delivery: waiting for contract acceptance…");
     try {
-      await loadWallet();
+      const addr = await detectWallet();
+      if (addr) setWalletAddr(addr);
       const result = await writeContract("create_delivery", [
         form.title, form.description, form.courier, toWei(form.fee), form.terms_url, form.terms_digest,
       ]);
@@ -61,8 +64,6 @@ export default function CreatePage() {
     } catch (e) { notify("error", e instanceof Error ? e.message : "Failed."); }
     finally { setBusy(false); }
   }
-
-  useEffect(() => { loadWallet(); }, []);
 
   return (
     <div>

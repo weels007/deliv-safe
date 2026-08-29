@@ -21,11 +21,11 @@ export default function DisputePage() {
 
   const notify = (kind: "ok" | "error" | "pending", message: string, hash?: string) => setToast({ kind, message, hash });
 
-  async function loadWallet() {
+  async function detectWallet(): Promise<string> {
     try {
       const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
-      if (accounts?.[0]) setWalletAddr(accounts[0].toLowerCase());
-    } catch { /* ignore */ }
+      return accounts?.[0]?.toLowerCase() || "";
+    } catch { return ""; }
   }
 
   async function refresh(id = deliveryId) {
@@ -35,12 +35,13 @@ export default function DisputePage() {
     else { setDelivery(null); notify("error", result.error || "Delivery not found."); }
   }
 
-  useEffect(() => { loadWallet(); }, []);
+  useEffect(() => { detectWallet().then(setWalletAddr); }, []);
 
   async function openDispute() {
     setBusy(true); notify("pending", "Open dispute: waiting…");
     try {
-      await loadWallet();
+      const addr = await detectWallet();
+      if (addr) setWalletAddr(addr);
       const result = await writeContract("open_dispute", [Number(deliveryId)]);
       if (!result.success) return notify("error", result.error || "Dispute failed.", result.hash);
       await refresh();
@@ -72,7 +73,7 @@ export default function DisputePage() {
           <button onClick={() => refresh()}>Load</button>
         </div>
         <button className="red-btn full" disabled={!canDispute || !!busy} onClick={openDispute}>
-          {busy ? "Processing…" : !delivery ? "Load delivery first" : !isParty ? "You are not a party" : delivery.status !== "IN_TRANSIT" && delivery.status !== "DELIVERED" ? `Status: ${delivery.status}` : !hasBothCheckpoints ? "Both checkpoints required" : delivery.recovery_deadline <= nowSec ? "Deadline passed" : "Open dispute"}
+          {busy ? "Processing…" : !walletAddr ? "Wallet not connected" : !delivery ? "Load delivery first" : !isParty ? "You are not a party" : delivery.status !== "IN_TRANSIT" && delivery.status !== "DELIVERED" ? `Status: ${delivery.status}` : !hasBothCheckpoints ? "Both checkpoints required" : delivery.recovery_deadline <= nowSec ? "Deadline passed" : "Open dispute"}
         </button>
       </div>
 

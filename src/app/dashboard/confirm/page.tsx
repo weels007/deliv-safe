@@ -21,11 +21,11 @@ export default function ConfirmPage() {
 
   const notify = (kind: "ok" | "error" | "pending", message: string, hash?: string) => setToast({ kind, message, hash });
 
-  async function loadWallet() {
+  async function detectWallet(): Promise<string> {
     try {
       const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
-      if (accounts?.[0]) setWalletAddr(accounts[0].toLowerCase());
-    } catch { /* ignore */ }
+      return accounts?.[0]?.toLowerCase() || "";
+    } catch { return ""; }
   }
 
   async function refresh(id = deliveryId) {
@@ -35,12 +35,13 @@ export default function ConfirmPage() {
     else { setDelivery(null); notify("error", result.error || "Delivery not found."); }
   }
 
-  useEffect(() => { loadWallet(); }, []);
+  useEffect(() => { detectWallet().then(setWalletAddr); }, []);
 
   async function confirm() {
     setBusy(true); notify("pending", "Confirm completion: waiting…");
     try {
-      await loadWallet();
+      const addr = await detectWallet();
+      if (addr) setWalletAddr(addr);
       const result = await writeContract("confirm_completion", [Number(deliveryId)]);
       if (!result.success) return notify("error", result.error || "Confirm failed.", result.hash);
       await refresh();
@@ -71,7 +72,7 @@ export default function ConfirmPage() {
           <button onClick={() => refresh()}>Load</button>
         </div>
         <button className="green-btn full" disabled={!canConfirm || !!busy} onClick={confirm}>
-          {busy ? "Processing…" : !delivery ? "Load delivery first" : !isSender ? "You are not the sender" : delivery.status !== "IN_TRANSIT" && delivery.status !== "DELIVERED" ? `Status: ${delivery.status}` : delivery.courier_delivery_checkpoint <= 0 ? "No courier delivery checkpoint" : delivery.delivery_deadline <= nowSec ? "Deadline passed" : "Confirm completion"}
+          {busy ? "Processing…" : !walletAddr ? "Wallet not connected" : !delivery ? "Load delivery first" : !isSender ? "You are not the sender" : delivery.status !== "IN_TRANSIT" && delivery.status !== "DELIVERED" ? `Status: ${delivery.status}` : delivery.courier_delivery_checkpoint <= 0 ? "No courier delivery checkpoint" : delivery.delivery_deadline <= nowSec ? "Deadline passed" : "Confirm completion"}
         </button>
       </div>
 

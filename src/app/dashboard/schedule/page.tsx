@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Clock } from "lucide-react";
 import { readContract, writeContract, unwrap, deliveryStatusColor } from "@/lib/genlayer";
 
@@ -19,6 +19,13 @@ function formatTs(ts: number) {
   return new Date(ts * 1000).toLocaleString();
 }
 
+async function detectWallet(): Promise<string> {
+  try {
+    const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
+    return accounts?.[0]?.toLowerCase() || "";
+  } catch { return ""; }
+}
+
 export default function SchedulePage() {
   const [deliveryId, setDeliveryId] = useState("0");
   const [delivery, setDelivery] = useState<Delivery | null>(null);
@@ -34,15 +41,13 @@ export default function SchedulePage() {
 
   const notify = (kind: "ok" | "error" | "pending", message: string, hash?: string) => setToast({ kind, message, hash });
 
+  useEffect(() => { detectWallet().then(setWalletAddr); }, []);
+
   async function refresh(id = deliveryId) {
     const result = await readContract("get_delivery", [Number(id)]);
     const parsed = result.success ? unwrap<Delivery>(result.data) : null;
     if (parsed && typeof parsed === "object") {
       setDelivery(parsed);
-      try {
-        const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
-        if (accounts?.[0]) setWalletAddr(accounts[0].toLowerCase());
-      } catch { /* ignore */ }
       notify("ok", `Delivery #${id} loaded.`);
     } else {
       setDelivery(null);
@@ -102,7 +107,7 @@ export default function SchedulePage() {
           <label>Recovery deadline (date/time)<input type="datetime-local" value={form.recovery} onChange={(e) => setForm({ ...form, recovery: e.target.value })} /></label>
         </div>
         <button className="blue-btn full" disabled={busy || !canSchedule} onClick={setSchedule}>
-          {busy ? "Processing…" : !delivery ? "Load delivery first" : !isSender ? "You are not the sender" : delivery.status !== "DELIVERY_OPEN" ? `Status: ${delivery.status}` : "Lock schedule on-chain"}
+          {busy ? "Processing…" : !delivery ? "Load delivery first" : !walletAddr ? "Wallet not connected" : !isSender ? "You are not the sender" : delivery.status !== "DELIVERY_OPEN" ? `Status: ${delivery.status}` : "Lock schedule on-chain"}
         </button>
       </div>
 
@@ -116,6 +121,7 @@ export default function SchedulePage() {
           <h3>#{delivery.id} · {delivery.title}</h3>
           {isSender && <p>Your role: <strong>SENDER</strong></p>}
           {!isSender && walletAddr && <p>You are not the sender of this delivery.</p>}
+          {!walletAddr && <p>Connect your wallet to check your role.</p>}
           <dl>
             <dt>Pickup</dt><dd>{formatTs(delivery.pickup_deadline)}</dd>
             <dt>Transit</dt><dd>{formatTs(delivery.transit_deadline)}</dd>

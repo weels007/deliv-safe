@@ -28,11 +28,11 @@ export default function AcceptPage() {
 
   const notify = (kind: "ok" | "error" | "pending", message: string, hash?: string) => setToast({ kind, message, hash });
 
-  async function loadWallet() {
+  async function detectWallet(): Promise<string> {
     try {
       const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
-      if (accounts?.[0]) setWalletAddr(accounts[0].toLowerCase());
-    } catch { /* ignore */ }
+      return accounts?.[0]?.toLowerCase() || "";
+    } catch { return ""; }
   }
 
   async function refresh(id = deliveryId) {
@@ -42,12 +42,13 @@ export default function AcceptPage() {
     else { setDelivery(null); notify("error", result.error || "Delivery not found."); }
   }
 
-  useEffect(() => { loadWallet(); }, []);
+  useEffect(() => { detectWallet().then(setWalletAddr); }, []);
 
   async function accept() {
     setBusy(true); notify("pending", "Accept delivery: waiting…");
     try {
-      await loadWallet();
+      const addr = await detectWallet();
+      if (addr) setWalletAddr(addr);
       const bond = toWei(bondAmount);
       if (bond <= BigInt(0)) return notify("error", "Bond must be greater than 0.");
       const result = await writeContract("accept_delivery", [Number(deliveryId)], bond);
@@ -80,7 +81,7 @@ export default function AcceptPage() {
           <label>Bond amount (GEN)<input placeholder="e.g. 0.01 or 1" value={bondAmount} onChange={(e) => setBondAmount(e.target.value)} /></label>
         )}
         <button className="green-btn full" disabled={!canAccept || !!busy} onClick={accept}>
-          {busy ? "Processing…" : !delivery ? "Load delivery first" : !isCourier ? "You are not the courier" : delivery.status !== "DELIVERY_OPEN" ? `Status: ${delivery.status}` : !delivery.pickup_deadline ? "Schedule not set" : delivery.pickup_deadline <= nowSec ? "Acceptance closed" : "Accept delivery"}
+          {busy ? "Processing…" : !walletAddr ? "Wallet not connected" : !delivery ? "Load delivery first" : !isCourier ? "You are not the courier" : delivery.status !== "DELIVERY_OPEN" ? `Status: ${delivery.status}` : !delivery.pickup_deadline ? "Schedule not set" : delivery.pickup_deadline <= nowSec ? "Acceptance closed" : "Accept delivery"}
         </button>
       </div>
 

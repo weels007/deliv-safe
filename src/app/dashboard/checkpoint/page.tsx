@@ -27,11 +27,11 @@ export default function CheckpointPage() {
 
   const notify = (kind: "ok" | "error" | "pending", message: string, hash?: string) => setToast({ kind, message, hash });
 
-  async function loadWallet() {
+  async function detectWallet(): Promise<string> {
     try {
       const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
-      if (accounts?.[0]) setWalletAddr(accounts[0].toLowerCase());
-    } catch { /* ignore */ }
+      return accounts?.[0]?.toLowerCase() || "";
+    } catch { return ""; }
   }
 
   async function refresh(id = deliveryId) {
@@ -39,7 +39,6 @@ export default function CheckpointPage() {
     const parsed = result.success ? unwrap<Delivery>(result.data) : null;
     if (parsed && typeof parsed === "object") {
       setDelivery(parsed);
-      await loadWallet();
       notify("ok", `Delivery #${id} loaded.`);
     } else {
       setDelivery(null);
@@ -47,7 +46,7 @@ export default function CheckpointPage() {
     }
   }
 
-  useEffect(() => { loadWallet(); }, []);
+  useEffect(() => { detectWallet().then(setWalletAddr); }, []);
 
   const myRole = delivery && walletAddr
     ? walletAddr === delivery.courier.toLowerCase() ? "COURIER"
@@ -71,7 +70,8 @@ export default function CheckpointPage() {
     setBusy(true);
     notify("pending", "Record checkpoint: waiting…");
     try {
-      await loadWallet();
+      const addr = await detectWallet();
+      if (addr) setWalletAddr(addr);
       const result = await writeContract("record_checkpoint", [
         Number(deliveryId), form.kind, form.url, form.digest, Number(form.revision),
       ]);
@@ -107,7 +107,7 @@ export default function CheckpointPage() {
           </>
         )}
         <button className="blue-btn full" disabled={!canRecord || busy} onClick={recordCheckpoint}>
-          {busy ? "Processing…" : !delivery ? "Load delivery first" : !myRole ? "You are not a party" : delivery.status !== "IN_TRANSIT" && delivery.status !== "DELIVERED" ? `Status: ${delivery.status}` : !deadlineOk ? "Deadline passed" : !revisionValid ? "Revision must be ≥ 1" : "Record checkpoint"}
+          {busy ? "Processing…" : !walletAddr ? "Wallet not connected" : !delivery ? "Load delivery first" : !myRole ? "You are not a party" : delivery.status !== "IN_TRANSIT" && delivery.status !== "DELIVERED" ? `Status: ${delivery.status}` : !deadlineOk ? "Deadline passed" : !revisionValid ? "Revision must be ≥ 1" : "Record checkpoint"}
         </button>
       </div>
 

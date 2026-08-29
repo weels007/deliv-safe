@@ -21,11 +21,11 @@ export default function FundPage() {
 
   const notify = (kind: "ok" | "error" | "pending", message: string, hash?: string) => setToast({ kind, message, hash });
 
-  async function loadWallet() {
+  async function detectWallet(): Promise<string> {
     try {
       const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
-      if (accounts?.[0]) setWalletAddr(accounts[0].toLowerCase());
-    } catch { /* ignore */ }
+      return accounts?.[0]?.toLowerCase() || "";
+    } catch { return ""; }
   }
 
   async function refresh(id = deliveryId) {
@@ -35,12 +35,13 @@ export default function FundPage() {
     else { setDelivery(null); notify("error", result.error || "Delivery not found."); }
   }
 
-  useEffect(() => { loadWallet(); }, []);
+  useEffect(() => { detectWallet().then(setWalletAddr); }, []);
 
   async function fund() {
     setBusy(true); notify("pending", "Fund delivery: waiting…");
     try {
-      await loadWallet();
+      const addr = await detectWallet();
+      if (addr) setWalletAddr(addr);
       const result = await writeContract("fund_delivery", [Number(deliveryId)], delivery ? BigInt(delivery.fee) : BigInt(0));
       if (!result.success) return notify("error", result.error || "Fund failed.", result.hash);
       await refresh();
@@ -68,7 +69,7 @@ export default function FundPage() {
           <button onClick={() => refresh()}>Load</button>
         </div>
         <button className="blue-btn full" disabled={!canFund || !!busy} onClick={fund}>
-          {busy ? "Processing…" : !delivery ? "Load delivery first" : !isSender ? "You are not the sender" : delivery.status !== "COURIER_ACCEPTED" ? `Status: ${delivery.status}` : delivery.pickup_deadline <= nowSec ? "Funding closed" : `Fund ${(delivery.fee / 1e18).toFixed(4)} GEN`}
+          {busy ? "Processing…" : !walletAddr ? "Wallet not connected" : !delivery ? "Load delivery first" : !isSender ? "You are not the sender" : delivery.status !== "COURIER_ACCEPTED" ? `Status: ${delivery.status}` : delivery.pickup_deadline <= nowSec ? "Funding closed" : `Fund ${(delivery.fee / 1e18).toFixed(4)} GEN`}
         </button>
       </div>
 

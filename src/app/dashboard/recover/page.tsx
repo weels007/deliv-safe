@@ -21,11 +21,11 @@ export default function RecoverPage() {
 
   const notify = (kind: "ok" | "error" | "pending", message: string, hash?: string) => setToast({ kind, message, hash });
 
-  async function loadWallet() {
+  async function detectWallet(): Promise<string> {
     try {
       const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
-      if (accounts?.[0]) setWalletAddr(accounts[0].toLowerCase());
-    } catch { /* ignore */ }
+      return accounts?.[0]?.toLowerCase() || "";
+    } catch { return ""; }
   }
 
   async function refresh(id = deliveryId) {
@@ -35,12 +35,13 @@ export default function RecoverPage() {
     else { setDelivery(null); notify("error", result.error || "Delivery not found."); }
   }
 
-  useEffect(() => { loadWallet(); }, []);
+  useEffect(() => { detectWallet().then(setWalletAddr); }, []);
 
   async function recover() {
     setBusy(true); notify("pending", "Recover: waiting…");
     try {
-      await loadWallet();
+      const addr = await detectWallet();
+      if (addr) setWalletAddr(addr);
       const result = await writeContract("recover", [Number(deliveryId)]);
       if (!result.success) return notify("error", result.error || "Recover failed.", result.hash);
       await refresh();
@@ -64,6 +65,7 @@ export default function RecoverPage() {
   const canRecover = delivery && isParty && ALLOWED_STATUSES.includes(delivery.status) && deadlineOk;
 
   function recoverLabel() {
+    if (!walletAddr) return "Wallet not connected";
     if (!delivery) return "Load delivery first";
     if (!isParty) return "You are not a party";
     if (!ALLOWED_STATUSES.includes(delivery.status)) return `Status: ${delivery.status}`;
