@@ -1,23 +1,16 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { readContract, writeContract, unwrap, deliveryStatusColor } from "@/lib/genlayer";
 
 type Delivery = {
   id: number; sender: string; courier: string; title: string; status: string;
+  transit_deadline: number; delivery_deadline: number;
 };
 
 type Toast = { kind: "ok" | "error" | "pending"; message: string; hash?: string } | null;
 
 const COURIER_KINDS = ["PICKUP_CONFIRMED", "IN_TRANSIT", "DELIVERED"];
 const SENDER_KINDS = ["DELIVERY_CONFIRMED", "DAMAGE_REPORT", "COMPLETION_ACK"];
-const KIND_LABELS: Record<string, string> = {
-  PICKUP_CONFIRMED: "Courier confirms package pickup.",
-  IN_TRANSIT: "Courier reports package in transit.",
-  DELIVERED: "Courier confirms package delivered.",
-  DELIVERY_CONFIRMED: "Sender confirms delivery receipt.",
-  DAMAGE_REPORT: "Sender reports damage during delivery.",
-  COMPLETION_ACK: "Sender acknowledges delivery completion.",
-};
 
 export default function CheckpointPage() {
   const [toast, setToast] = useState<Toast>(null);
@@ -34,21 +27,27 @@ export default function CheckpointPage() {
 
   const notify = (kind: "ok" | "error" | "pending", message: string, hash?: string) => setToast({ kind, message, hash });
 
+  async function loadWallet() {
+    try {
+      const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
+      if (accounts?.[0]) setWalletAddr(accounts[0].toLowerCase());
+    } catch { /* ignore */ }
+  }
+
   async function refresh(id = deliveryId) {
     const result = await readContract("get_delivery", [Number(id)]);
     const parsed = result.success ? unwrap<Delivery>(result.data) : null;
     if (parsed && typeof parsed === "object") {
       setDelivery(parsed);
-      try {
-        const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
-        if (accounts?.[0]) setWalletAddr(accounts[0].toLowerCase());
-      } catch { /* ignore */ }
+      await loadWallet();
       notify("ok", `Delivery #${id} loaded.`);
     } else {
       setDelivery(null);
       notify("error", result.error || "Delivery not found.");
     }
   }
+
+  useEffect(() => { loadWallet(); }, []);
 
   const myRole = delivery && walletAddr
     ? walletAddr === delivery.courier.toLowerCase() ? "COURIER"
@@ -58,13 +57,21 @@ export default function CheckpointPage() {
 
   const allowedKinds = myRole === "COURIER" ? COURIER_KINDS : myRole === "SENDER" ? SENDER_KINDS : [];
 
-  const canRecord = delivery && myRole && (delivery.status === "IN_TRANSIT" || delivery.status === "DELIVERED");
+  const nowSec = Math.floor(Date.now() / 1000);
+  const deadlineOk = myRole === "COURIER"
+    ? delivery ? delivery.transit_deadline > nowSec : false
+    : myRole === "SENDER"
+    ? delivery ? delivery.delivery_deadline > nowSec : false
+    : false;
+  const revisionValid = Number(form.revision) >= 1;
+  const canRecord = delivery && myRole && (delivery.status === "IN_TRANSIT" || delivery.status === "DELIVERED") && deadlineOk && revisionValid;
 
   async function recordCheckpoint() {
     if (!canRecord) return;
     setBusy(true);
     notify("pending", "Record checkpoint: waiting…");
     try {
+      await loadWallet();
       const result = await writeContract("record_checkpoint", [
         Number(deliveryId), form.kind, form.url, form.digest, Number(form.revision),
       ]);
@@ -77,7 +84,7 @@ export default function CheckpointPage() {
   return (
     <div>
       <h1>Record Checkpoint</h1>
-      <p className="page-desc">Append an immutable evidence checkpoint to a delivery. Each checkpoint preserves actor, role, URL, digest, and revision.</p>
+      <p className="page-desc">Append an immutable evidence checkpoint to a delivery. Each checkpoint preserves actor, role, URL, digest, and revision. Courier evidence must be before transit deadline; sender evidence before delivery deadline.</p>
 
       <div className="form-card">
         <div className="lookup">
@@ -94,13 +101,13 @@ export default function CheckpointPage() {
                 ))}
               </select>
             </label>
-            <label>Revision<input value={form.revision} onChange={(e) => setForm({ ...form, revision: e.target.value })} /></label>
+            <label>Revision (min 1)<input type="number" min="1" value={form.revision} onChange={(e) => setForm({ ...form, revision: e.target.value })} /></label>
             <label>Immutable evidence URL<input placeholder="https://ipfs.io/ipfs/QmHash..." value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} /></label>
             <label>SHA-256 digest<input placeholder="sha256: + 64 hex characters" value={form.digest} onChange={(e) => setForm({ ...form, digest: e.target.value })} /></label>
           </>
         )}
         <button className="blue-btn full" disabled={!canRecord || busy} onClick={recordCheckpoint}>
-          {busy ? "Processing…" : !delivery ? "Load delivery first" : !myRole ? "You are not a party" : delivery.status !== "IN_TRANSIT" && delivery.status !== "DELIVERED" ? `Status: ${delivery.status}` : "Record checkpoint"}
+          {busy ? "Processing…" : !delivery ? "Load delivery first" : !myRole ? "You are not a party" : delivery.status !== "IN_TRANSIT" && delivery.status !== "DELIVERED" ? `Status: ${delivery.status}` : !deadlineOk ? "Deadline passed" : !revisionValid ? "Revision must be ≥ 1" : "Record checkpoint"}
         </button>
       </div>
 

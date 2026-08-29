@@ -1,11 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ShieldCheck } from "lucide-react";
 import { readContract, writeContract, unwrap, deliveryStatusColor } from "@/lib/genlayer";
 
 type Delivery = {
   id: number; sender: string; courier: string; title: string; description: string;
   fee: number; bond: number; status: string; verdict: string;
+  recovery_deadline: number;
   courier_paid: number; courier_refunded: number; sender_paid: number; sender_refunded: number;
 };
 
@@ -41,18 +42,21 @@ export default function JuryPage() {
     return `status-pill ${deliveryStatusColor[status] || ""}`;
   }
 
+  const nowSec = Math.floor(Date.now() / 1000);
+  const canAdjudicate = delivery && delivery.status === "DISPUTED" && delivery.recovery_deadline > nowSec;
+
   return (
     <div>
       <h1>Run AI Jury</h1>
-      <p className="page-desc">The GenLayer consensus network evaluates all checkpoints and evidence. Requires DISPUTED status.</p>
+      <p className="page-desc">The GenLayer consensus network evaluates all checkpoints and evidence. Requires DISPUTED status and must be done before the recovery deadline.</p>
 
       <div className="form-card">
         <div className="lookup">
           <input value={deliveryId} onChange={(e) => setDeliveryId(e.target.value)} placeholder="Delivery ID" />
           <button onClick={() => refresh()}>Load</button>
         </div>
-        <button className="blue-btn full" disabled={!delivery || delivery.status !== "DISPUTED" || !!busy} onClick={adjudicate}>
-          {busy ? "Processing…" : !delivery ? "Load delivery first" : delivery.status !== "DISPUTED" ? `Status: ${delivery.status}` : "Run jury"}
+        <button className="blue-btn full" disabled={!canAdjudicate || !!busy} onClick={adjudicate}>
+          {busy ? "Processing…" : !delivery ? "Load delivery first" : delivery.status !== "DISPUTED" ? `Status: ${delivery.status}` : delivery.recovery_deadline <= nowSec ? "Deadline passed" : "Run jury"}
         </button>
       </div>
 

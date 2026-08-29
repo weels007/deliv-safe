@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ShieldCheck } from "lucide-react";
 import { readContract, writeContract, unwrap, deliveryStatusColor } from "@/lib/genlayer";
 
@@ -24,8 +24,16 @@ export default function AcceptPage() {
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState(false);
   const [bondAmount, setBondAmount] = useState("0.01");
+  const [walletAddr, setWalletAddr] = useState("");
 
   const notify = (kind: "ok" | "error" | "pending", message: string, hash?: string) => setToast({ kind, message, hash });
+
+  async function loadWallet() {
+    try {
+      const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
+      if (accounts?.[0]) setWalletAddr(accounts[0].toLowerCase());
+    } catch { /* ignore */ }
+  }
 
   async function refresh(id = deliveryId) {
     const result = await readContract("get_delivery", [Number(id)]);
@@ -34,9 +42,12 @@ export default function AcceptPage() {
     else { setDelivery(null); notify("error", result.error || "Delivery not found."); }
   }
 
+  useEffect(() => { loadWallet(); }, []);
+
   async function accept() {
     setBusy(true); notify("pending", "Accept delivery: waiting…");
     try {
+      await loadWallet();
       const bond = toWei(bondAmount);
       if (bond <= BigInt(0)) return notify("error", "Bond must be greater than 0.");
       const result = await writeContract("accept_delivery", [Number(deliveryId)], bond);
@@ -51,12 +62,14 @@ export default function AcceptPage() {
     return `status-pill ${deliveryStatusColor[status] || ""}`;
   }
 
-  const canAccept = delivery && delivery.status === "DELIVERY_OPEN" && delivery.pickup_deadline > 0;
+  const isCourier = delivery && walletAddr && walletAddr === delivery.courier.toLowerCase();
+  const nowSec = Math.floor(Date.now() / 1000);
+  const canAccept = delivery && isCourier && delivery.status === "DELIVERY_OPEN" && delivery.pickup_deadline > 0 && delivery.pickup_deadline > nowSec;
 
   return (
     <div>
       <h1>Accept Delivery</h1>
-      <p className="page-desc">Courier accepts a delivery and bonds to it. Requires DELIVERY_OPEN status with schedule set.</p>
+      <p className="page-desc">Courier accepts a delivery and bonds to it. Requires DELIVERY_OPEN status with schedule set. Only the designated courier wallet can accept.</p>
 
       <div className="form-card">
         <div className="lookup">
@@ -67,7 +80,7 @@ export default function AcceptPage() {
           <label>Bond amount (GEN)<input placeholder="e.g. 0.01 or 1" value={bondAmount} onChange={(e) => setBondAmount(e.target.value)} /></label>
         )}
         <button className="green-btn full" disabled={!canAccept || !!busy} onClick={accept}>
-          {busy ? "Processing…" : !delivery ? "Load delivery first" : delivery.status !== "DELIVERY_OPEN" ? `Status: ${delivery.status}` : !delivery.pickup_deadline ? "Schedule not set" : "Accept delivery"}
+          {busy ? "Processing…" : !delivery ? "Load delivery first" : !isCourier ? "You are not the courier" : delivery.status !== "DELIVERY_OPEN" ? `Status: ${delivery.status}` : !delivery.pickup_deadline ? "Schedule not set" : delivery.pickup_deadline <= nowSec ? "Acceptance closed" : "Accept delivery"}
         </button>
       </div>
 
@@ -85,6 +98,8 @@ export default function AcceptPage() {
             <dt>Bond</dt><dd>{(delivery.bond / 1e18).toFixed(4)} GEN</dd>
             <dt>Courier</dt><dd className="mono">{delivery.courier}</dd>
           </dl>
+          {isCourier && <p>Your role: <strong>COURIER</strong></p>}
+          {!isCourier && walletAddr && <p>You are not the designated courier for this delivery.</p>}
         </div>
       )}
 

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ArrowRight } from "lucide-react";
 import { writeContract } from "@/lib/genlayer";
 
@@ -14,6 +14,7 @@ function toWei(v: string): bigint {
 export default function CreatePage() {
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState(false);
+  const [walletAddr, setWalletAddr] = useState("");
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -25,12 +26,20 @@ export default function CreatePage() {
 
   const notify = (kind: "ok" | "error" | "pending", message: string, hash?: string) => setToast({ kind, message, hash });
 
+  async function loadWallet() {
+    try {
+      const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
+      if (accounts?.[0]) setWalletAddr(accounts[0].toLowerCase());
+    } catch { /* ignore */ }
+  }
+
   function validate(): string | null {
     if (form.title.length < 4) return "Title must be at least 4 characters.";
     if (form.title.length > 100) return "Title must be at most 100 characters.";
     if (form.description.length < 10) return "Description must be at least 10 characters.";
     if (form.description.length > 500) return "Description must be at most 500 characters.";
     if (!form.courier.startsWith("0x") || form.courier.length !== 42) return "Courier must be a valid 0x address (42 characters).";
+    if (walletAddr && form.courier.toLowerCase() === walletAddr) return "Courier cannot be your own address.";
     if (toWei(form.fee) <= BigInt(0)) return "Fee must be greater than 0.";
     if (!form.terms_url.startsWith("https://ipfs.io/ipfs/") && !form.terms_url.startsWith("https://gateway.pinata.cloud/ipfs/") && !form.terms_url.startsWith("https://arweave.net/")) return "Terms URL must start with https://ipfs.io/ipfs/, https://gateway.pinata.cloud/ipfs/, or https://arweave.net/.";
     if (!form.terms_digest.startsWith("sha256:") || form.terms_digest.length !== 71) return "Terms digest must be sha256: followed by 64 hex characters.";
@@ -43,6 +52,7 @@ export default function CreatePage() {
     setBusy(true);
     notify("pending", "Create delivery: waiting for contract acceptance…");
     try {
+      await loadWallet();
       const result = await writeContract("create_delivery", [
         form.title, form.description, form.courier, toWei(form.fee), form.terms_url, form.terms_digest,
       ]);
@@ -51,6 +61,8 @@ export default function CreatePage() {
     } catch (e) { notify("error", e instanceof Error ? e.message : "Failed."); }
     finally { setBusy(false); }
   }
+
+  useEffect(() => { loadWallet(); }, []);
 
   return (
     <div>
