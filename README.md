@@ -187,7 +187,7 @@ Create `.env`:
 
 ```env
 NEXT_PUBLIC_NETWORK=studionet
-NEXT_PUBLIC_CONTRACT_ADDRESS=0xDb81af800641A2A4CF3b1215154247db938affDA
+NEXT_PUBLIC_CONTRACT_ADDRESS=0x70e420583725000fF65F11D36071c2DF1a1103fb
 NEXT_PUBLIC_EXPLORER_BASE=https://explorer-studio.genlayer.com/address/
 ```
 
@@ -282,7 +282,7 @@ python scripts/run_studionet_dispute.py
 
 - Rate limit: 60 req/min, 1000 req/hr
 - Explorer: [explorer-studio.genlayer.com](https://explorer-studio.genlayer.com)
-- Contract: `0xDb81af800641A2A4CF3b1215154247db938affDA`
+- Contract: `0x70e420583725000fF65F11D36071c2DF1a1103fb`
 
 ## License
 

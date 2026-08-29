@@ -4,6 +4,20 @@ import typing
 import json
 
 
+def derive_verdict(pickup: str, condition: str, delivery: str, sender_response: str) -> str:
+    if pickup == "NO" or condition == "LOST":
+        return "SENDER_REFUND"
+    if "UNVERIFIED" in (pickup, condition, delivery, sender_response):
+        return "EVIDENCE_CONFLICT"
+    if condition == "DAMAGED":
+        return "PARTIAL_PAYOUT_50"
+    if delivery == "YES" and sender_response == "ACCEPTED":
+        return "FULL_PAYOUT"
+    if delivery == "YES":
+        return "PARTIAL_PAYOUT_75"
+    return "PARTIAL_PAYOUT_50"
+
+
 @gl.evm.contract_interface
 class _Recipient:
     class View:
@@ -345,19 +359,7 @@ class DeliveryEscrow(gl.Contract):
             raise gl.vm.UserError("INVALID_FACTS")
         if delivery not in ("YES", "NO", "UNVERIFIED") or sender_response not in ("ACCEPTED", "DISPUTED", "CANCELLED", "UNVERIFIED"):
             raise gl.vm.UserError("INVALID_FACTS")
-        conflict = "YES" if "UNVERIFIED" in (pickup, condition, delivery, sender_response) else "NO"
-        if conflict == "YES" or pickup == "NO" or condition == "LOST":
-            verdict = "EVIDENCE_CONFLICT"
-        elif pickup == "NO" or condition == "LOST":
-            verdict = "SENDER_REFUND"
-        elif condition == "DAMAGED":
-            verdict = "PARTIAL_PAYOUT_50"
-        elif delivery == "YES" and sender_response == "ACCEPTED":
-            verdict = "FULL_PAYOUT"
-        elif delivery == "YES":
-            verdict = "PARTIAL_PAYOUT_75"
-        else:
-            verdict = "PARTIAL_PAYOUT_50"
+        verdict = derive_verdict(pickup, condition, delivery, sender_response)
         self.delivery_pickup_fact[delivery_id] = pickup
         self.delivery_condition_fact[delivery_id] = condition
         self.delivery_delivery_fact[delivery_id] = delivery
