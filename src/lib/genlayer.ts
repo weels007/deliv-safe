@@ -47,14 +47,29 @@ const IGNORED_ERROR_CODES = new Set([
   "VALIDATOR_QUORUM_REACHED",
 ]);
 
+function shouldIgnoreReceipt(record: Record<string, unknown>): boolean {
+  const topLevel =
+    IGNORED_ERROR_CODES.has(String(record.error_code ?? "").toUpperCase()) ||
+    String(record.stderr ?? "").toLowerCase().includes("cancelled after quorum");
+  if (topLevel) return true;
+  const gv = record.genvm_result as Record<string, unknown> | undefined;
+  if (gv) {
+    if (IGNORED_ERROR_CODES.has(String(gv.error_code ?? "").toUpperCase())) return true;
+    if (String(gv.stderr ?? "").toLowerCase().includes("cancelled after quorum")) return true;
+    const raw = gv.raw_error as Record<string, unknown> | undefined;
+    if (raw && Array.isArray(raw.causes)) {
+      const causes = raw.causes.map(c => String(c).toUpperCase());
+      if (causes.some(c => IGNORED_ERROR_CODES.has(c))) return true;
+    }
+  }
+  return false;
+}
+
 function findRuntimeFailure(value: unknown, seen = new Set<unknown>()): RuntimeFailure | null {
   if (!value || typeof value !== "object" || seen.has(value)) return null;
   seen.add(value);
   const record = value as Record<string, unknown>;
-  const errorCode = String(record.error_code ?? "").toUpperCase();
-  if (IGNORED_ERROR_CODES.has(errorCode)) return null;
-  const stderr = String(record.stderr ?? "").toLowerCase();
-  if (stderr.includes("cancelled after quorum")) return null;
+  if (shouldIgnoreReceipt(record)) return null;
   const status = String(record.status ?? record.execution_result ?? record.txExecutionResultName ?? "").toUpperCase();
   if (["ROLLBACK", "CONTRACT_ERROR", "ERROR", "FAILED", "FINISHED_WITH_ERROR"].some(marker => status.includes(marker))) {
     const raw = record.payload ?? record.error_description ?? record.raw_error ?? record.message ?? record.stderr ?? record.stdout ?? status;
