@@ -42,14 +42,27 @@ export type ContractResult = {
 
 type RuntimeFailure = { kind: string; payload: string };
 
+const IGNORED_ERROR_CODES = new Set([
+  "CONSENSUS_VALIDATOR_QUORUM_REACHED",
+  "VALIDATOR_QUORUM_REACHED",
+]);
+
 function findRuntimeFailure(value: unknown, seen = new Set<unknown>()): RuntimeFailure | null {
   if (!value || typeof value !== "object" || seen.has(value)) return null;
   seen.add(value);
   const record = value as Record<string, unknown>;
+  const errorCode = String(record.error_code ?? "").toUpperCase();
+  if (IGNORED_ERROR_CODES.has(errorCode)) return null;
+  const stderr = String(record.stderr ?? "").toLowerCase();
+  if (stderr.includes("cancelled after quorum")) return null;
   const status = String(record.status ?? record.execution_result ?? record.txExecutionResultName ?? "").toUpperCase();
   if (["ROLLBACK", "CONTRACT_ERROR", "ERROR", "FAILED", "FINISHED_WITH_ERROR"].some(marker => status.includes(marker))) {
-    const raw = record.payload ?? record.error_description ?? record.raw_error ?? record.message ?? status;
-    return { kind: status || "CONTRACT_ERROR", payload: typeof raw === "string" ? raw : JSON.stringify(raw) };
+    const raw = record.payload ?? record.error_description ?? record.raw_error ?? record.message ?? record.stderr ?? record.stdout ?? status;
+    const payload = typeof raw === "string" ? raw : JSON.stringify(raw);
+    if (payload === status) {
+      console.error("[DelivSafe] receipt with ERROR status (no payload):", JSON.stringify(record, null, 2));
+    }
+    return { kind: status || "CONTRACT_ERROR", payload };
   }
   for (const nested of Object.values(record)) {
     const failure = findRuntimeFailure(nested, seen);
