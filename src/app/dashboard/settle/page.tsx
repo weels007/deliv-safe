@@ -51,7 +51,9 @@ export default function SettlePage() {
           <input value={deliveryId} onChange={(e) => setDeliveryId(e.target.value)} placeholder="Delivery ID" />
           <button onClick={() => refresh()}>Load</button>
         </div>
-        <button className="green-btn full" disabled={!!busy} onClick={settle}>{busy ? "Processing…" : "Settle payment"}</button>
+        <button className="green-btn full" disabled={!delivery || delivery.status !== "ADJUDICATED" || !!busy} onClick={settle}>
+          {busy ? "Processing…" : !delivery ? "Load delivery first" : delivery.status !== "ADJUDICATED" ? `Status: ${delivery.status}` : "Settle payment"}
+        </button>
       </div>
 
       {delivery && (

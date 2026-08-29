@@ -55,7 +55,9 @@ export default function FundPage() {
           <input value={deliveryId} onChange={(e) => setDeliveryId(e.target.value)} placeholder="Delivery ID" />
           <button onClick={() => refresh()}>Load</button>
         </div>
-        <button className="blue-btn full" disabled={!!busy} onClick={fund}>{busy ? "Processing…" : "Fund delivery"}</button>
+        <button className="blue-btn full" disabled={!delivery || delivery.status !== "COURIER_ACCEPTED" || !!busy} onClick={fund}>
+          {busy ? "Processing…" : !delivery ? "Load delivery first" : delivery.status !== "COURIER_ACCEPTED" ? `Status: ${delivery.status}` : `Fund ${(delivery.fee / 1e18).toFixed(4)} GEN`}
+        </button>
       </div>
 
       {delivery && (

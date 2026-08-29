@@ -51,7 +51,9 @@ export default function RecoverPage() {
           <input value={deliveryId} onChange={(e) => setDeliveryId(e.target.value)} placeholder="Delivery ID" />
           <button onClick={() => refresh()}>Load</button>
         </div>
-        <button className="orange-btn full" disabled={!!busy} onClick={recover}>{busy ? "Processing…" : "Recover funds"}</button>
+        <button className="orange-btn full" disabled={!delivery || !["COURIER_ACCEPTED", "IN_TRANSIT", "DELIVERED", "DISPUTED", "RECOVERY", "ADJUDICATED"].includes(delivery.status) || !!busy} onClick={recover}>
+          {busy ? "Processing…" : !delivery ? "Load delivery first" : !["COURIER_ACCEPTED", "IN_TRANSIT", "DELIVERED", "DISPUTED", "RECOVERY", "ADJUDICATED"].includes(delivery.status) ? `Status: ${delivery.status}` : "Recover funds"}
+        </button>
       </div>
 
       {delivery && (

@@ -51,7 +51,9 @@ export default function ConfirmPage() {
           <input value={deliveryId} onChange={(e) => setDeliveryId(e.target.value)} placeholder="Delivery ID" />
           <button onClick={() => refresh()}>Load</button>
         </div>
-        <button className="green-btn full" disabled={!!busy} onClick={confirm}>{busy ? "Processing…" : "Confirm completion"}</button>
+        <button className="green-btn full" disabled={!delivery || (delivery.status !== "IN_TRANSIT" && delivery.status !== "DELIVERED") || !!busy} onClick={confirm}>
+          {busy ? "Processing…" : !delivery ? "Load delivery first" : delivery.status !== "IN_TRANSIT" && delivery.status !== "DELIVERED" ? `Status: ${delivery.status}` : "Confirm completion"}
+        </button>
       </div>
 
       {delivery && (

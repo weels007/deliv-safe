@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Package, ExternalLink, Wallet, X, LayoutDashboard, PlusCircle, ClipboardList, MapPin, Scale, ArrowLeft } from "lucide-react";
+import { Package, ExternalLink, Wallet, X, LayoutDashboard, PlusCircle, ClipboardList, MapPin, Scale, ArrowLeft, Clock } from "lucide-react";
 import { connectWallet, explorerUrl } from "@/lib/genlayer";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -71,6 +71,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       label: "Lifecycle",
       items: [
         { href: "/dashboard/create", label: "Create Delivery", icon: PlusCircle },
+        { href: "/dashboard/schedule", label: "Set Schedule", icon: Clock },
         { href: "/dashboard/accept", label: "Accept", icon: ClipboardList },
         { href: "/dashboard/fund", label: "Fund", icon: ClipboardList },
         { href: "/dashboard/confirm", label: "Confirm", icon: ClipboardList },

@@ -6,16 +6,24 @@ import { readContract, writeContract, unwrap, deliveryStatusColor } from "@/lib/
 type Delivery = {
   id: number; sender: string; courier: string; title: string; description: string;
   fee: number; bond: number; status: string; verdict: string;
+  pickup_deadline: number;
   courier_paid: number; courier_refunded: number; sender_paid: number; sender_refunded: number;
 };
 
 type Toast = { kind: "ok" | "error" | "pending"; message: string; hash?: string } | null;
+
+function toWei(v: string): bigint {
+  const s = v.trim();
+  if (s.includes(".")) return BigInt(Math.round(Number(s) * 1e18));
+  return BigInt(s || "0");
+}
 
 export default function AcceptPage() {
   const [deliveryId, setDeliveryId] = useState("0");
   const [delivery, setDelivery] = useState<Delivery | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState(false);
+  const [bondAmount, setBondAmount] = useState("0.01");
 
   const notify = (kind: "ok" | "error" | "pending", message: string, hash?: string) => setToast({ kind, message, hash });
 
@@ -29,7 +37,9 @@ export default function AcceptPage() {
   async function accept() {
     setBusy(true); notify("pending", "Accept delivery: waiting…");
     try {
-      const result = await writeContract("accept_delivery", [Number(deliveryId)]);
+      const bond = toWei(bondAmount);
+      if (bond <= BigInt(0)) return notify("error", "Bond must be greater than 0.");
+      const result = await writeContract("accept_delivery", [Number(deliveryId)], bond);
       if (!result.success) return notify("error", result.error || "Accept failed.", result.hash);
       await refresh();
       notify("ok", "Courier accepted delivery.", result.hash);
@@ -41,17 +51,24 @@ export default function AcceptPage() {
     return `status-pill ${deliveryStatusColor[status] || ""}`;
   }
 
+  const canAccept = delivery && delivery.status === "DELIVERY_OPEN" && delivery.pickup_deadline > 0;
+
   return (
     <div>
       <h1>Accept Delivery</h1>
-      <p className="page-desc">Courier accepts a delivery and bonds to it. Requires DELIVERY_OPEN status.</p>
+      <p className="page-desc">Courier accepts a delivery and bonds to it. Requires DELIVERY_OPEN status with schedule set.</p>
 
       <div className="form-card">
         <div className="lookup">
           <input value={deliveryId} onChange={(e) => setDeliveryId(e.target.value)} placeholder="Delivery ID" />
           <button onClick={() => refresh()}>Load</button>
         </div>
-        <button className="green-btn full" disabled={!!busy} onClick={accept}>{busy ? "Processing…" : "Accept delivery"}</button>
+        {delivery && (
+          <label>Bond amount (GEN)<input placeholder="e.g. 0.01 or 1" value={bondAmount} onChange={(e) => setBondAmount(e.target.value)} /></label>
+        )}
+        <button className="green-btn full" disabled={!canAccept || !!busy} onClick={accept}>
+          {busy ? "Processing…" : !delivery ? "Load delivery first" : delivery.status !== "DELIVERY_OPEN" ? `Status: ${delivery.status}` : !delivery.pickup_deadline ? "Schedule not set" : "Accept delivery"}
+        </button>
       </div>
 
       {delivery && (

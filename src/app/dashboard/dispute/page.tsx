@@ -51,7 +51,9 @@ export default function DisputePage() {
           <input value={deliveryId} onChange={(e) => setDeliveryId(e.target.value)} placeholder="Delivery ID" />
           <button onClick={() => refresh()}>Load</button>
         </div>
-        <button className="red-btn full" disabled={!!busy} onClick={openDispute}>{busy ? "Processing…" : "Open dispute"}</button>
+        <button className="red-btn full" disabled={!delivery || (delivery.status !== "IN_TRANSIT" && delivery.status !== "DELIVERED") || !!busy} onClick={openDispute}>
+          {busy ? "Processing…" : !delivery ? "Load delivery first" : delivery.status !== "IN_TRANSIT" && delivery.status !== "DELIVERED" ? `Status: ${delivery.status}` : "Open dispute"}
+        </button>
       </div>
 
       {delivery && (

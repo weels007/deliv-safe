@@ -51,7 +51,9 @@ export default function JuryPage() {
           <input value={deliveryId} onChange={(e) => setDeliveryId(e.target.value)} placeholder="Delivery ID" />
           <button onClick={() => refresh()}>Load</button>
         </div>
-        <button className="blue-btn full" disabled={!!busy} onClick={adjudicate}>{busy ? "Processing…" : "Run jury"}</button>
+        <button className="blue-btn full" disabled={!delivery || delivery.status !== "DISPUTED" || !!busy} onClick={adjudicate}>
+          {busy ? "Processing…" : !delivery ? "Load delivery first" : delivery.status !== "DISPUTED" ? `Status: ${delivery.status}` : "Run jury"}
+        </button>
       </div>
 
       {delivery && (
