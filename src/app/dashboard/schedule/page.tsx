@@ -24,6 +24,7 @@ export default function SchedulePage() {
   const [delivery, setDelivery] = useState<Delivery | null>(null);
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState(false);
+  const [walletAddr, setWalletAddr] = useState("");
   const [form, setForm] = useState({
     pickup: "",
     transit: "",
@@ -36,9 +37,21 @@ export default function SchedulePage() {
   async function refresh(id = deliveryId) {
     const result = await readContract("get_delivery", [Number(id)]);
     const parsed = result.success ? unwrap<Delivery>(result.data) : null;
-    if (parsed && typeof parsed === "object") { setDelivery(parsed); notify("ok", `Delivery #${id} loaded.`); }
-    else { setDelivery(null); notify("error", result.error || "Delivery not found."); }
+    if (parsed && typeof parsed === "object") {
+      setDelivery(parsed);
+      try {
+        const accounts = (await window.ethereum?.request({ method: "eth_accounts" })) as string[];
+        if (accounts?.[0]) setWalletAddr(accounts[0].toLowerCase());
+      } catch { /* ignore */ }
+      notify("ok", `Delivery #${id} loaded.`);
+    } else {
+      setDelivery(null);
+      notify("error", result.error || "Delivery not found.");
+    }
   }
+
+  const isSender = delivery && walletAddr && walletAddr === delivery.sender.toLowerCase();
+  const canSchedule = delivery && isSender && delivery.status === "DELIVERY_OPEN";
 
   async function setSchedule() {
     setBusy(true);
@@ -80,7 +93,6 @@ export default function SchedulePage() {
           <input value={deliveryId} onChange={(e) => setDeliveryId(e.target.value)} placeholder="Delivery ID" />
           <button onClick={() => refresh()}>Load</button>
         </div>
-        <label>Delivery ID<input value={deliveryId} readOnly /></label>
         <div className="two">
           <label>Pickup deadline (date/time)<input type="datetime-local" value={form.pickup} onChange={(e) => setForm({ ...form, pickup: e.target.value })} /></label>
           <label>Transit deadline (date/time)<input type="datetime-local" value={form.transit} onChange={(e) => setForm({ ...form, transit: e.target.value })} /></label>
@@ -89,8 +101,8 @@ export default function SchedulePage() {
           <label>Delivery deadline (date/time)<input type="datetime-local" value={form.delivery} onChange={(e) => setForm({ ...form, delivery: e.target.value })} /></label>
           <label>Recovery deadline (date/time)<input type="datetime-local" value={form.recovery} onChange={(e) => setForm({ ...form, recovery: e.target.value })} /></label>
         </div>
-        <button className="blue-btn full" disabled={busy || !delivery} onClick={setSchedule}>
-          {busy ? "Processing…" : "Lock schedule on-chain"}
+        <button className="blue-btn full" disabled={busy || !canSchedule} onClick={setSchedule}>
+          {busy ? "Processing…" : !delivery ? "Load delivery first" : !isSender ? "You are not the sender" : delivery.status !== "DELIVERY_OPEN" ? `Status: ${delivery.status}` : "Lock schedule on-chain"}
         </button>
       </div>
 
@@ -102,6 +114,8 @@ export default function SchedulePage() {
           </div>
           <div className={statusPill(delivery.status)}>{delivery.status.replace(/_/g, " ")}</div>
           <h3>#{delivery.id} · {delivery.title}</h3>
+          {isSender && <p>Your role: <strong>SENDER</strong></p>}
+          {!isSender && walletAddr && <p>You are not the sender of this delivery.</p>}
           <dl>
             <dt>Pickup</dt><dd>{formatTs(delivery.pickup_deadline)}</dd>
             <dt>Transit</dt><dd>{formatTs(delivery.transit_deadline)}</dd>

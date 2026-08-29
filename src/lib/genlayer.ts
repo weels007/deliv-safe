@@ -65,6 +65,21 @@ function shouldIgnoreReceipt(record: Record<string, unknown>): boolean {
   return false;
 }
 
+function hasMeaningfulErrorInfo(record: Record<string, unknown>): boolean {
+  if (record.stderr && String(record.stderr).trim()) return true;
+  if (record.error_code != null && String(record.error_code).trim()) return true;
+  if (record.raw_error != null) return true;
+  if (record.error_description != null && String(record.error_description).trim()) return true;
+  const gv = record.genvm_result as Record<string, unknown> | undefined;
+  if (gv) {
+    if (gv.stderr && String(gv.stderr).trim()) return true;
+    if (gv.error_code != null && String(gv.error_code).trim()) return true;
+    if (gv.raw_error != null) return true;
+    if (gv.error_description != null && String(gv.error_description).trim()) return true;
+  }
+  return false;
+}
+
 function findRuntimeFailure(value: unknown, seen = new Set<unknown>()): RuntimeFailure | null {
   if (!value || typeof value !== "object" || seen.has(value)) return null;
   seen.add(value);
@@ -72,6 +87,7 @@ function findRuntimeFailure(value: unknown, seen = new Set<unknown>()): RuntimeF
   if (shouldIgnoreReceipt(record)) return null;
   const status = String(record.status ?? record.execution_result ?? record.txExecutionResultName ?? "").toUpperCase();
   if (["ROLLBACK", "CONTRACT_ERROR", "ERROR", "FAILED", "FINISHED_WITH_ERROR"].some(marker => status.includes(marker))) {
+    if (!hasMeaningfulErrorInfo(record)) return null;
     const raw = record.payload ?? record.error_description ?? record.raw_error ?? record.message ?? record.stderr ?? record.stdout ?? status;
     const payload = typeof raw === "string" ? raw : JSON.stringify(raw);
     if (payload === status) {
