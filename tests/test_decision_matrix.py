@@ -1,11 +1,40 @@
 """Regression tests for the DeliveryEscrow adjudication verdict derivation.
 
-Every test exercises the production derive_verdict function imported from
-contracts.verdict — the same code path used by the on-chain adjudicate method.
+Every test exercises the production derive_verdict function extracted directly
+from the DeliveryEscrow.py contract source — not a separate helper or copy.
 """
 
-from contracts.verdict import derive_verdict
+from pathlib import Path
+import ast
 
+# ---------------------------------------------------------------------------
+# Extract derive_verdict from the contract source AST and execute it.
+# This guarantees the tests exercise the exact production code path.
+# ---------------------------------------------------------------------------
+_CONTRACT = Path(__file__).parents[1] / "contracts" / "DeliveryEscrow.py"
+_source = _CONTRACT.read_text(encoding="utf-8")
+_tree = ast.parse(_source)
+
+# Find the top-level derive_verdict function
+_func_node = None
+for node in ast.iter_child_nodes(_tree):
+    if isinstance(node, ast.FunctionDef) and node.name == "derive_verdict":
+        _func_node = node
+        break
+
+assert _func_node is not None, "derive_verdict not found in contract source"
+
+_func_source = ast.get_source_segment(_source, _func_node)
+assert _func_source is not None, "Could not extract derive_verdict source"
+
+_ns: dict = {}
+exec(compile(ast.parse(_func_source), "<contract>", "exec"), _ns)
+derive_verdict = _ns["derive_verdict"]
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
 def test_precedence_and_happy_path():
     assert derive_verdict("YES", "INTACT", "YES", "ACCEPTED") == "FULL_PAYOUT"
